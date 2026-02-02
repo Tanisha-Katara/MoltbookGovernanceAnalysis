@@ -3,7 +3,7 @@ import json
 import re
 from typing import Optional
 from google import genai
-from config import GOOGLE_API_KEY, GEMINI_MODEL
+from config import GCP_PROJECT, GCP_LOCATION, GEMINI_MODEL
 
 _client = None
 
@@ -11,7 +11,7 @@ _client = None
 def _get_client():
     global _client
     if _client is None:
-        _client = genai.Client(api_key=GOOGLE_API_KEY)
+        _client = genai.Client(vertexai=True, project=GCP_PROJECT, location=GCP_LOCATION)
     return _client
 
 PATTERN_CLUSTERING_PROMPT = """\
@@ -90,8 +90,7 @@ async def classify_patterns(results: list[dict]) -> dict:
         summaries=summaries_text,
     )
 
-    response = await asyncio.to_thread(
-        _get_client().models.generate_content,
+    response = await _get_client().aio.models.generate_content(
         model=GEMINI_MODEL,
         contents=prompt,
     )

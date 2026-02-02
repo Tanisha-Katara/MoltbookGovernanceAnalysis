@@ -3,7 +3,7 @@ import json
 import re
 from typing import Optional
 from google import genai
-from config import GOOGLE_API_KEY, GEMINI_MODEL, CONCURRENCY_LIMIT, MAX_COMMENTS_FULL_THREAD, CHUNK_SIZE
+from config import GCP_PROJECT, GCP_LOCATION, GEMINI_MODEL, CONCURRENCY_LIMIT, MAX_COMMENTS_FULL_THREAD, CHUNK_SIZE
 from data.comment_parser import format_thread_for_llm
 
 _client = None
@@ -20,7 +20,7 @@ def _get_semaphore():
 def _get_client():
     global _client
     if _client is None:
-        _client = genai.Client(api_key=GOOGLE_API_KEY)
+        _client = genai.Client(vertexai=True, project=GCP_PROJECT, location=GCP_LOCATION)
     return _client
 
 PER_POST_PROMPT = """\
@@ -105,8 +105,7 @@ async def _summarize_chunk(chunk: list[dict]) -> str:
     max_retries = 3
     for attempt in range(max_retries):
         try:
-            response = await asyncio.to_thread(
-                _get_client().models.generate_content,
+            response = await _get_client().aio.models.generate_content(
                 model=GEMINI_MODEL,
                 contents=prompt,
             )
@@ -115,7 +114,7 @@ async def _summarize_chunk(chunk: list[dict]) -> str:
             if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
                 if attempt < max_retries - 1:
                     # Extract retry delay from error message or use exponential backoff
-                    wait_time = (2 ** attempt) * 15  # 15, 30, 60 seconds
+                    wait_time = (2 ** attempt) * 2  # 2, 4, 8 seconds
                     print(f"Rate limit hit, waiting {wait_time}s before retry...")
                     await asyncio.sleep(wait_time)
                 else:
@@ -136,11 +135,9 @@ async def analyze_post(post: dict, comments: list[dict]) -> dict:
         # Handle large threads by summarizing chunks
         if len(comments) > MAX_COMMENTS_FULL_THREAD:
             chunks = _chunk_comments(comments)
-            # Process chunks sequentially to respect rate limits
-            summaries = []
-            for chunk in chunks:
-                summary = await _summarize_chunk(chunk)
-                summaries.append(summary)
+            summaries = await asyncio.gather(
+                *[_summarize_chunk(chunk) for chunk in chunks]
+            )
             thread_text = "\n\n---\n\n".join(
                 f"[Chunk {i+1} summary]: {s}" for i, s in enumerate(summaries)
             )
@@ -167,7 +164,7 @@ async def analyze_post(post: dict, comments: list[dict]) -> dict:
             except Exception as e:
                 if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
                     if attempt < max_retries - 1:
-                        wait_time = (2 ** attempt) * 15
+                        wait_time = (2 ** attempt) * 2
                         print(f"Rate limit hit for '{title[:50]}...', waiting {wait_time}s...")
                         await asyncio.sleep(wait_time)
                     else:

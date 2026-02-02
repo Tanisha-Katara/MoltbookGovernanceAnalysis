@@ -8,7 +8,7 @@ from typing import Optional
 from tqdm import tqdm
 
 from config import (
-    GOOGLE_API_KEY,
+    GCP_PROJECT,
     TOP_POSTS_COUNT,
     DRY_RUN_COUNT,
     OUTPUT_DIR,
@@ -42,8 +42,8 @@ def save_raw_results(results: list[dict]):
 
 
 async def run(dry_run: bool = False):
-    if not GOOGLE_API_KEY:
-        print("ERROR: GOOGLE_API_KEY not set. Copy .env.example to .env and add your key.")
+    if not GCP_PROJECT:
+        print("ERROR: GOOGLE_CLOUD_PROJECT not set. Set it in .env or run: export GOOGLE_CLOUD_PROJECT=your-project-id")
         sys.exit(1)
 
     n = DRY_RUN_COUNT if dry_run else TOP_POSTS_COUNT
